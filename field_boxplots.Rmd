@@ -1,0 +1,110 @@
+---
+title: "Field boxplots"
+author: "Gavin Lemley"
+date: "March 18, 2019"
+output: html_document
+---
+
+Find the R-project root directory to simplify file path designations.
+```{r}
+root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
+```
+
+Load in data table
+```{r}
+library(tidyverse)
+library(readxl)
+
+field.data <- file.path(root.dir, 
+                          "data",
+                          "Field.xlsx") %>% 
+  read_excel() %>%
+  select(BASIN, LOCATION, RIVMILE, COLL_DATE, TEMP, COND, DO, PH)
+  # select(TEMP, COND, DO, PH) 
+
+  # theme_set(theme_grey(base_size = 15)) 
+
+field.data$COND[field.data$COND=="NA"] = NA
+field.data$DO[field.data$DO=="NA"] = NA
+field.data$PH[field.data$PH=="NA"] = NA
+field.data$TEMP[field.data$TEMP=="NA"] = NA
+
+field.data$COND_num <- as.numeric(field.data$COND)
+field.data$DO_num <- as.numeric(field.data$DO)
+field.data$PH_num <- as.numeric(field.data$PH)
+field.data$TEMP_num <- as.numeric(field.data$TEMP)
+
+# field.data$test <- ifelse(is.na(field.data$COND_num) & !is.na(field.data$COND), TRUE, FALSE)
+
+```
+
+```{r, fig.width=4, fig.height=5}
+field.data %>%
+  ggplot(aes("",COND_num)) +
+  # scale_x_continuous(breaks=scales::pretty_breaks(n = 10)) +
+  geom_boxplot() + 
+  # scale_y_continuous(trans='log2')
+  scale_y_log10(limits = c(1,10000),breaks=c(0,10,100,250,500,1000,5000,10000,50000))
+  # geom_jitter()
+ggsave(filename = "COND.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+field.data %>%
+  ggplot(aes("",COND_num)) +
+  # scale_x_continuous(breaks=scales::pretty_breaks(n = 10)) +
+  geom_boxplot() + 
+  # scale_y_continuous(trans='log2')
+  scale_y_log10(limits = c(1,10000), breaks=c(0,10,100,250,500,1000,5000,10000,50000)) +
+  geom_jitter()
+ggsave(filename = "COND_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+# field.data %>%
+#   ggplot(aes("",COND_num)) +
+#   # scale_x_continuous(breaks=scales::pretty_breaks(n = 10)) +
+#   geom_boxplot() + 
+#   scale_y_continuous(limits = c(0, 10000), breaks = seq(0, 5000, by = 500)) 
+#   # scale_y_log10(breaks=c(0,10,100,500,1000,10000,50000)) +
+#   # geom_jitter()
+
+field.data %>%
+  ggplot(aes("",DO_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 2))
+ggsave(filename = "DO.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+field.data %>%
+  ggplot(aes("",DO_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 2)) +
+  geom_jitter()
+ggsave(filename = "DO_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+field.data %>%
+  ggplot(aes("",PH_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 1)) 
+  # geom_jitter()
+ggsave(filename = "PH.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+field.data %>%
+  ggplot(aes("",PH_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 1)) +
+  geom_jitter()
+ggsave(filename = "PH_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+field.data %>%
+  ggplot(aes("",TEMP_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5))
+  # geom_jitter()
+ggsave(filename = "TEMP.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+field.data %>%
+  ggplot(aes("",TEMP_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5)) +
+  geom_jitter()
+ggsave(filename = "TEMP_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+
+```
+
