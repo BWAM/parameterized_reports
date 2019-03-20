@@ -10,19 +10,14 @@ Find the R-project root directory to simplify file path designations.
 root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
 ```
 
-Load in data table
+Load in data tables
 ```{r}
 library(tidyverse)
 library(readxl)
 
-field.data <- file.path(root.dir, 
-                          "data",
-                          "Field.xlsx") %>% 
+field.data <- file.path(root.dir, "data", "Field.xlsx") %>% 
   read_excel() %>%
   select(BASIN, LOCATION, RIVMILE, COLL_DATE, TEMP, COND, DO, PH)
-  # select(TEMP, COND, DO, PH) 
-
-  # theme_set(theme_grey(base_size = 15)) 
 
 field.data$COND[field.data$COND=="NA"] = NA
 field.data$DO[field.data$DO=="NA"] = NA
@@ -34,10 +29,19 @@ field.data$DO_num <- as.numeric(field.data$DO)
 field.data$PH_num <- as.numeric(field.data$PH)
 field.data$TEMP_num <- as.numeric(field.data$TEMP)
 
+# Check for non-numeric characters. Returns TRUE if present.
 # field.data$test <- ifelse(is.na(field.data$COND_num) & !is.na(field.data$COND), TRUE, FALSE)
+
+
+chem.data <- file.path(root.dir, "data", "simpleRIBS.csv") %>% 
+  read_csv()
+
+chem.data.cl <- filter(chem.data, Parameter %in% "CHLORIDE (AS CL) (total,mg/l)")
+chem.data.TP <- filter(chem.data, Parameter %in% "PHOSPHORUS, TOTAL (AS P) (total,mg/l)")
 
 ```
 
+Plotting in-situ parameters
 ```{r, fig.width=4, fig.height=5}
 field.data %>%
   ggplot(aes("",COND_num)) +
@@ -69,42 +73,59 @@ field.data %>%
   ggplot(aes("",DO_num)) +
   geom_boxplot() +
   scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 2))
-ggsave(filename = "DO.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "DO.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
 field.data %>%
   ggplot(aes("",DO_num)) +
   geom_boxplot() +
   scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 2)) +
   geom_jitter()
-ggsave(filename = "DO_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "DO_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
 field.data %>%
   ggplot(aes("",PH_num)) +
   geom_boxplot() +
   scale_y_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 1)) 
   # geom_jitter()
-ggsave(filename = "PH.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "PH.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
 field.data %>%
   ggplot(aes("",PH_num)) +
   geom_boxplot() +
   scale_y_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 1)) +
   geom_jitter()
-ggsave(filename = "PH_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "PH_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
 field.data %>%
   ggplot(aes("",TEMP_num)) +
   geom_boxplot() +
   scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5))
   # geom_jitter()
-ggsave(filename = "TEMP.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "TEMP.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
 field.data %>%
   ggplot(aes("",TEMP_num)) +
   geom_boxplot() +
   scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5)) +
   geom_jitter()
-ggsave(filename = "TEMP_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "TEMP_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
+```
+
+Plotting chem params
+```{r}
+chem.data.cl %>%
+  ggplot(aes("",Result.Value)) +
+  geom_boxplot() +
+  scale_y_continuous(breaks = seq(0, 400, by = 50))
+  # geom_jitter()
+ggsave(filename = "cl.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
+
+chem.data.TP %>%
+  ggplot(aes("",Result.Value)) +
+  geom_boxplot() +
+  scale_y_continuous(breaks = seq(0, 0.4, by = 0.05))
+  # geom_jitter()
+ggsave(filename = "TP.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 ```
 
