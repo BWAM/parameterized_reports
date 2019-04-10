@@ -14,30 +14,53 @@ Load in data tables
 ```{r}
 library(tidyverse)
 library(readxl)
+library(ggbeeswarm)
 
 field.data <- file.path(root.dir, "data", "Field.xlsx") %>% 
   read_excel() %>%
   select(BASIN, LOCATION, RIVMILE, COLL_DATE, TEMP, COND, DO, PH)
 
+#Format fields to add leading, and keep trailing zeros.
+field.data$BASIN <- formatC(field.data$BASIN, width = 2, format = "d", flag = "0")
+field.data$RIVMILE <- formatC( field.data$RIVMILE, format='f', digits=1 )
+#Create BAS_LOC_RM field
+field.data$BAS_LOC_RM <- paste0(field.data$BASIN,"-",field.data$LOCATION,"-",field.data$RIVMILE)
+
+#Convert character NAs to actual NAs
 field.data$COND[field.data$COND=="NA"] = NA
 field.data$DO[field.data$DO=="NA"] = NA
 field.data$PH[field.data$PH=="NA"] = NA
 field.data$TEMP[field.data$TEMP=="NA"] = NA
 
+#Create numeric fields for plotting
 field.data$COND_num <- as.numeric(field.data$COND)
 field.data$DO_num <- as.numeric(field.data$DO)
 field.data$PH_num <- as.numeric(field.data$PH)
 field.data$TEMP_num <- as.numeric(field.data$TEMP)
 
+#Subset basin 14 beaver brook to use as example
+field.basin14 <- filter(field.data, BASIN == 14)
+field.basin14BEAV <- field.basin14 %>% 
+  filter(LOCATION %in% "BEAV")
+field.basin14BEAV$COND_num <- as.numeric(field.basin14BEAV$COND)
+field.basin14BEAV$DO_num <- as.numeric(field.basin14BEAV$DO)
+field.basin14BEAV$PH_num <- as.numeric(field.basin14BEAV$PH)
+field.basin14BEAV$TEMP_num <- as.numeric(field.basin14BEAV$TEMP)
+
+
+
 # Check for non-numeric characters. Returns TRUE if present.
 # field.data$test <- ifelse(is.na(field.data$COND_num) & !is.na(field.data$COND), TRUE, FALSE)
-
 
 chem.data <- file.path(root.dir, "data", "simpleRIBS.csv") %>% 
   read_csv()
 
 chem.data.cl <- filter(chem.data, Parameter %in% "CHLORIDE (AS CL) (total,mg/l)")
 chem.data.TP <- filter(chem.data, Parameter %in% "PHOSPHORUS, TOTAL (AS P) (total,mg/l)")
+
+# wallkill.data <- file.path(root.dir, "data", "") %>% 
+#   read_excel() %>%
+#   select()
 
 ```
 
@@ -50,7 +73,7 @@ field.data %>%
   # scale_y_continuous(trans='log2')
   scale_y_log10(limits = c(1,10000),breaks=c(0,10,100,250,500,1000,5000,10000,50000))
   # geom_jitter()
-ggsave(filename = "COND.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "COND.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
 
 field.data %>%
   ggplot(aes("",COND_num)) +
@@ -59,7 +82,7 @@ field.data %>%
   # scale_y_continuous(trans='log2')
   scale_y_log10(limits = c(1,10000), breaks=c(0,10,100,250,500,1000,5000,10000,50000)) +
   geom_jitter()
-ggsave(filename = "COND_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
+# ggsave(filename = "COND_jitter.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data"))
 
 # field.data %>%
 #   ggplot(aes("",COND_num)) +
@@ -115,17 +138,85 @@ field.data %>%
 Plotting chem params
 ```{r}
 chem.data.cl %>%
-  ggplot(aes("",Result.Value)) +
+  ggplot(aes("Cl",Result.Value)) +
   geom_boxplot() +
   scale_y_continuous(breaks = seq(0, 400, by = 50))
   # geom_jitter()
 ggsave(filename = "cl.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
 
 chem.data.TP %>%
-  ggplot(aes("",Result.Value)) +
+  ggplot(aes("TP",Result.Value)) +
   geom_boxplot() +
   scale_y_continuous(breaks = seq(0, 0.4, by = 0.05))
   # geom_jitter()
 ggsave(filename = "TP.png", width = 3, height = 4, units = "in", path = file.path(root.dir, "data/plots"))
+```
+
+Plotting secondard data on top of box plots
+```{r, fig.width=4, fig.height=5}
+#Beeswarm plot
+field.data %>%
+  ggplot(aes("",COND_num)) +
+  geom_boxplot() + 
+  scale_y_log10(limits = c(1,10000),breaks=c(0,10,50,100,250,500,1000,5000,10000,50000)) +
+  geom_beeswarm(data = field.basin14BEAV,aes("", y=COND_num), col="blue", dodge.width=1, cex=2) 
+
+#Jitter plot
+field.data %>%
+  ggplot(aes("",COND_num)) +
+  geom_boxplot() + 
+  scale_y_log10(limits = c(1,10000),breaks=c(0,10,50,100,250,500,1000,5000,10000,50000)) +
+  geom_jitter(data = field.basin14BEAV,aes("", y=COND_num), col="blue")
+
+#Quasirandom
+field.data %>%
+  ggplot(aes("",COND_num)) +
+  geom_boxplot() + 
+  scale_y_log10(limits = c(1,10000),breaks=c(0,10,50,100,250,500,1000,5000,10000,50000)) +
+  geom_quasirandom(data = field.basin14BEAV,aes("", y=COND_num), col="blue") 
+
+#dotplot
+# field.data %>%
+#   ggplot(aes("",COND_num)) +
+#   geom_boxplot() + 
+#   scale_y_log10(limits = c(1,10000),breaks=c(0,10,50,100,250,500,1000,5000,10000,50000)) +
+#   geom_dotplot(data = field.basin14BEAV,aes("", y=COND_num), col="blue")
+
+#geom_point with x-axis site labels
+field.data %>%
+  ggplot(aes("_NY state",COND_num)) +
+  geom_boxplot() + 
+  scale_y_log10(limits = c(1,10000),breaks=c(0,10,50,100,250,500,1000,5000,10000,50000)) +
+  geom_point(data = field.basin14BEAV,aes(BAS_LOC_RM, y=COND_num), col="blue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+field.basin14 %>%
+  ggplot(aes("_Basin 14",COND_num)) +
+  geom_boxplot() + 
+  scale_y_log10(limits = c(1,10000),breaks=c(0,10,50,100,250,500,1000,5000,10000,50000)) +
+  geom_point(data = field.basin14BEAV,aes(BAS_LOC_RM, y=COND_num), col="blue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+field.data %>%
+  ggplot(aes("_NY state",DO_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 20), breaks = seq(0, 20, by = 2)) +
+  geom_point(data = field.basin14BEAV,aes(BAS_LOC_RM, y=DO_num), col="forest green") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+field.data %>%
+  ggplot(aes("_NY state",PH_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 14), breaks = seq(0, 14, by = 1)) +
+  geom_point(data = field.basin14BEAV,aes(BAS_LOC_RM, y=PH_num), col="orange") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+field.data %>%
+  ggplot(aes("_NY state",TEMP_num)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, 40), breaks = seq(0, 40, by = 5)) +
+  geom_point(data = field.basin14BEAV,aes(BAS_LOC_RM, y=TEMP_num), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 ```
 

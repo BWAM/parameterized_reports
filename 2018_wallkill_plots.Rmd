@@ -1,0 +1,53 @@
+---
+title: "2018_wallkill_plots"
+author: "Gavin Lemley"
+date: "April 8, 2019"
+output: html_document
+---
+
+Import data
+```{r}
+chem.wallkill <- read.csv("data/Wallkill_2018/2018_wallkill_chem_qaqcd-2019-03-29.csv", stringsAsFactors = FALSE, 
+                 colClasses = c(fraction="character")
+)
+
+chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
+  
+unique(chem.wallkill$chemical_name)
+sort(unique(chem.basin13$Parameter))
+
+```
+
+Subset data in input and historic tables
+```{r}
+library(tidyverse)
+
+chem.wallkill.TP <- filter(chem.wallkill, chemical_name %in% "PHOSPHORUS, TOTAL (AS P)")
+chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
+                                                          "Phosphorus (NA,mg/l)",
+                                                          "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
+
+chem.wallkill.N <- filter(chem.wallkill, chemical_name %in% "Nitrogen")
+# chem.basin13.N <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
+#...which is total N in historic??
+
+
+```
+
+Plot TP
+```{r, fig.width=7, fig.height=6}
+# Plot historic with 2018 sites
+chem.basin13.TP %>%
+  ggplot(aes("_Basin 13 historic",Result_Val)) +
+  geom_boxplot() +
+  scale_y_continuous() +
+  geom_point(data = chem.wallkill.TP,aes(SiteID, y=result_value), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Plot historic basin only
+chem.basin13.TP %>%
+  ggplot(aes("_Basin 13 historic",Result_Val)) +
+  geom_boxplot() +
+  scale_y_continuous()
+```
+
