@@ -1,0 +1,71 @@
+---
+title: "chem_data_tables"
+author: "Gavin Lemley"
+date: "April 11, 2019"
+output: html_document
+---
+
+Import data
+```{r}
+library(tidyverse)
+
+chem <- read.csv("data/FL_RAS_2018/2018_FingerLakes_chem_QAQCd_2019-02-19.csv", stringsAsFactors = FALSE, 
+                 colClasses = c(fraction="character")
+)
+
+```
+
+Transform into table showing sites by row and ananlyte/flag by column
+```{r}
+# Clean up parameter names
+chem <- chem %>% 
+  mutate(chemical_name = case_when(
+       chemical_name == "ALKALINITY, TOTAL (AS CaCO3)" ~ "Alkalinity",
+       chemical_name == "CHLORIDE (AS CL)" ~ "Chloride",
+       chemical_name == "HARDNESS (AS CACO3)" ~ "Hardness",
+       chemical_name == "Nitrate+Nitrite as Nitrogen" ~ "Nitrate+Nitrite",
+       chemical_name == "Nitrogen" ~ "Total Nitrogen",
+       chemical_name == "Nitrogen, ammonia (As N)" ~ "Ammonia",
+       chemical_name == "NITROGEN, KJELDAHL, TOTAL" ~ "Total Kjeldal Nitrogen",
+       chemical_name == "NITROGEN, NITRATE (AS N)" ~ "Nitrate",
+       chemical_name == "NITROGEN, NITRITE" ~ "Nitrite",
+       chemical_name == "PHOSPHORUS, TOTAL (AS P)" ~ "Total Phosphorus",
+       chemical_name == "TURBIDITY" ~ "Turbidity",
+       TRUE ~ chemical_name)
+       )
+
+# Make values only table 
+chem.values <- chem %>% 
+  mutate(chemical_name_units = paste0(chemical_name," (", result_unit, ")")) %>% 
+  select(chemical_name_units, result_value, SiteID) %>% 
+  spread(chemical_name_units, result_value)
+
+#Make flags only table
+chem.flags <- chem %>% 
+  mutate(chemical_name_flags = paste0(chemical_name, " flag")) %>% 
+  select(chemical_name_flags, validator_qualifiers, SiteID) %>% 
+  spread(chemical_name_flags, validator_qualifiers) 
+
+# Join values and flags tables
+chem.values.flags <- full_join(chem.values, chem.flags, by = "SiteID")
+
+# Split table by result type
+chem.metals <- chem.values.flags %>% 
+  select(SiteID, contains("Iron"), contains("Arsenic"), contains("Silver"),contains("Aluminum"), contains("Cadmium"), contains("Copper"), contains("Lead"), contains("Nickel"), contains("Zinc"))
+
+chem.nutrients <- chem.values.flags %>% 
+  select(SiteID, contains("Nitrate+Nitrite"), contains("Total Nitrogen"), contains("Ammonia"), contains("Total Kjeldal Nitrogen"), contains("Nitrate"), contains("Nitrite"), contains("Total Phosphorus"))
+
+chem.minerals <- chem.values.flags %>% 
+  select(SiteID, contains("Magnesium"), contains("Chloride"), contains("Calcium"), contains("Hardness"), contains("Alkalinity"), contains("Turbidity"))
+
+```
+
+Write tables to csvs
+```{r}
+write.csv(chem.metals, "data/FL_RAS_2018/FL_RAS_2018_chem_metals.csv", row.names = FALSE)
+write.csv(chem.nutrients, "data/FL_RAS_2018/FL_RAS_2018_chem_nutrients.csv", row.names = FALSE)
+write.csv(chem.minerals, "data/FL_RAS_2018/FL_RAS_2018_chem_minerals.csv", row.names = FALSE)
+
+```
+
