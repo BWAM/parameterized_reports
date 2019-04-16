@@ -7,9 +7,12 @@ output: html_document
 
 Import data
 ```{r}
+# Used for plot exports
+root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
+
 chem.wallkill <- read.csv("data/Wallkill_2018/2018_wallkill_chem_qaqcd-2019-03-29.csv", stringsAsFactors = FALSE, 
                  colClasses = c(fraction="character")
-)
+                 )
 
 chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
   
@@ -27,14 +30,32 @@ chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l
                                                           "Phosphorus (NA,mg/l)",
                                                           "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
 
-chem.wallkill.N <- filter(chem.wallkill, chemical_name %in% "Nitrogen")
-# chem.basin13.N <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
-#...which is total N in historic??
+chem.wallkill.NO3 <- filter(chem.wallkill, chemical_name %in% "NITROGEN, NITRATE (AS N)")
+chem.basin13.NO3 <- filter(chem.basin13, Parameter %in% c("Nitrogen, Nitrate (As N) (NA,mg/l)", 
+                                                        "NITROGEN, NITRATE (AS N) (total,mg/l)", 
+                                                        "Nitrogen, Nitrate (As N) (total,mg/l)"))
 
+chem.wallkill.Cl <- filter(chem.wallkill, chemical_name %in% "CHLORIDE (AS CL)")
+chem.basin13.Cl <- filter(chem.basin13, Parameter %in% c("CHLORIDE (AS CL) (total,mg/l)", 
+                                                        "Chloride (As Cl) (total,mg/l)"))
 
+chem.wallkill.TDS <- filter(chem.wallkill, chemical_name %in% "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE)")
+chem.basin13.TDS <- filter(chem.basin13, Parameter %in% c("Total Dissolved Solids (Residue, Filterable) (NA,mg/l)" , 
+                                                        "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE) (total,mg/l)",
+                                                        "Total Dissolved Solids (Residue, Filterable) (total,mg/l)"))
+
+chem.wallkill.chlorophyll <- filter(chem.wallkill, chemical_name %in% "Chlorophyll A" )
+
+chem.wallkill.Fe <- filter(chem.wallkill, chemical_name %in% "Iron")
+chem.basin13.Fe <- filter(chem.basin13, Parameter %in% "Iron (total,ug/l)")
+
+chem.wallkill.alk <- filter(chem.wallkill, chemical_name %in% "ALKALINITY, TOTAL (AS CaCO3)" )
+chem.basin13.alk <- filter(chem.basin13, Parameter %in% c("Alkalinity, Total (As CaCO3) (total,mg/l)" , 
+                                                        "Alkalinity, Total (As CaCO3) (NA,mg/l)",
+                                                        "ALKALINITY, TOTAL (AS CaCO3) (total,mg/l)" ))
 ```
 
-Plot TP
+Chemistry plots
 ```{r, fig.width=7, fig.height=6}
 # Plot historic with 2018 sites
 chem.basin13.TP %>%
@@ -42,12 +63,62 @@ chem.basin13.TP %>%
   geom_boxplot() +
   scale_y_continuous() +
   geom_point(data = chem.wallkill.TP,aes(SiteID, y=result_value), col="red") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("TP")
+ggsave(filename = "TP.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 
-# Plot historic basin only
-chem.basin13.TP %>%
+chem.basin13.NO3 %>%
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
-  scale_y_continuous()
+  scale_y_continuous() +
+  geom_point(data = chem.wallkill.NO3,aes(SiteID, y=result_value), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("NO3")
+ggsave(filename = "NO3.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+chem.basin13.Cl %>%
+  ggplot(aes("_Basin 13 historic",Result_Val)) +
+  geom_boxplot() +
+  scale_y_continuous() +
+  geom_point(data = chem.wallkill.Cl,aes(SiteID, y=result_value), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("Chloride")
+ggsave(filename = "Chloride.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+chem.basin13.TDS %>%
+  ggplot(aes("_Basin 13 historic",Result_Val)) +
+  geom_boxplot() +
+  scale_y_continuous() +
+  geom_point(data = chem.wallkill.TDS,aes(SiteID, y=result_value), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("TDS")
+ggsave(filename = "TDS.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+chem.basin13.Fe %>%
+  ggplot(aes("_Basin 13 historic",Result_Val)) +
+  geom_boxplot() +
+  scale_y_continuous() +
+  geom_point(data = chem.wallkill.Fe,aes(SiteID, y=result_value), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("Iron")
+ggsave(filename = "Iron.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+chem.basin13.alk %>%
+  ggplot(aes("_Basin 13 historic",Result_Val)) +
+  geom_boxplot() +
+  scale_y_continuous() +
+  geom_point(data = chem.wallkill.alk,aes(SiteID, y=result_value), col="red") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("Alkalinity")
+ggsave(filename = "Alk.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+chem.wallkill.chlorophyll %>%
+  ggplot(aes(SiteID,result_value)) +
+  geom_point() +
+  scale_y_continuous() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  ggtitle("Chlorophyll")
+ggsave(filename = "chlorophyll.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
 ```
 
