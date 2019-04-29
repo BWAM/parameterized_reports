@@ -5,6 +5,8 @@ date: "April 8, 2019"
 output: html_document
 ---
 
+#4/26/19 - V2 created to use unified chem dataset (2017, 2018 and peers)
+
 Load packages, import and prep data
 ```{r}
 library(tidyverse)
@@ -12,38 +14,41 @@ library(tidyverse)
 # Used for plot exports
 root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
 
-# Import 2018 chem and flow data. Apply qualitative flow based on sampling date
-chem.wallkill18 <- read.csv("data/Wallkill_2018/2018_wallkill_chem_qaqcd-2019-03-29.csv", stringsAsFactors = FALSE, 
+# Import chem data and split by year/project.
+chem.wallkill <- read.csv("data/Wallkill_2018/wallkill_chem_ras-2017-2018_peers-2018.csv", stringsAsFactors = FALSE,
                  colClasses = c(fraction="character")
-                 )
-chem.wallkill18$sample_date2 <- as.Date(chem.wallkill18$sample_date)
-flow.wallkill18 <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "simplified qual") %>% 
-  rename(sample_date2 = sample_date)
-flow.wallkill18$sample_date2 <- as.Date(flow.wallkill18$sample_date2)
+                 ) %>% 
+  mutate(chemical_name = toupper(chemical_name))
 
-# Join chem data and qualitative flow for plot symbology
-chem.wallkill18 <- chem.wallkill18 %>% 
-  left_join(flow.wallkill18, by = 'sample_date2')
+  # mutate(station = toupper(station))
+
+# Import site order and join to chem
+site.order <- read.csv("data/Wallkill_2018/wallkill_station-order_up-to-down.csv") %>% 
+  mutate(station = paste0("13-",station))
+chem.wallkill <- chem.wallkill %>% 
+  left_join(site.order, by = 'station') %>% 
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+
+# Import 2018 qualitative flow data and join to 2018 chem.
+flow.wallkill18 <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "simplified qual")
+flow.wallkill18$sample_date <- as.Date(flow.wallkill18$sample_date)
+flow.wallkill18$project_name <- "wallkill ras 2018"
+
+chem.wallkill$sample_date <- as.Date(chem.wallkill$date_time)
+chem.wallkill <- chem.wallkill %>% 
+  left_join(flow.wallkill18, by = c('sample_date', 'project_name')) %>% 
+  mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual))
 
 # Import basin 13 chem data (subset basin in ArcMap)
 chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
-
-# Import 2017 chem data, filter (field results only and remove equipment blanks), and reformat as needed
-chem.wallkill17 <- read.csv("data/Wallkill_2018/2017_wallkill_chem_raw.csv", stringsAsFactors = FALSE, 
-                 colClasses = c(fraction="character")) %>% 
-  filter(sample_source == "Field") %>% 
-  filter(!grepl("EB", sample_name))
-
-chem.wallkill17$BASIN <- formatC(chem.wallkill17$BASIN, width = 2, format = "d", flag = "0")
-chem.wallkill17$RIVMILE <- formatC( chem.wallkill17$RIVMILE, format='f', digits=1 )
-chem.wallkill17$SiteID <- paste0(chem.wallkill17$BASIN,"-",chem.wallkill17$LOCATION,"-",chem.wallkill17$RIVMILE)
 
 # Import survey in-situ chem data and prep as needed
  #...
   #...
 
 ### Use below for listing and choosing chem params for plotting (multiple variations present in historic data) ###
-sort(unique(chem.wallkill17$chemical_name))
+# sort(unique(chem.wallkill17$chemical_name))
 # sort(unique(chem.wallkill18$chemical_name))
 # sort(unique(chem.basin13$Parameter))
 
@@ -52,22 +57,32 @@ sort(unique(chem.wallkill17$chemical_name))
 
 TP plot
 # REMEMBER TO REORDER SITEIDs BY ORDER #
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.TP <- filter(chem.wallkill18, chemical_name %in% "PHOSPHORUS, TOTAL (AS P)")
-chem.wallkill17.TP <- filter(chem.wallkill17, chemical_name %in% "PHOSPHORUS, TOTAL (AS P)")
+```{r, fig.width=9, fig.height=6}
 chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
                                                           "Phosphorus (NA,mg/l)",
                                                           "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
+chem.wallkill.TP <- chem.wallkill %>% 
+  filter(chemical_name %in% "PHOSPHORUS, TOTAL (AS P)") %>% 
+  filter(!project_name %in% c("wallkill peers 2018"))
+
+ggplot()+
+  geom_point(data = chem.wallkill.TP, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 chem.basin13.TP %>%
+  # mutate(station = factor(station, c(unique(station), levels(chem.wallkill.TP$station)))) %>% 
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
-  scale_y_continuous() +
-  geom_point(data = chem.wallkill18.TP,aes(SiteID, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.TP,aes(SiteID, y=result_value), col="blue") +
+  # scale_y_continuous() +
+  scale_y_log10() +
+  geom_point(data = chem.wallkill.TP, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill ras 2017" = "blue", "wallkill ras 2018" = "red")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 2, "not observed" = 1)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   ggtitle("Total Phosphorus") +
   xlab("Site ID") +
-  ylab("TP (mg/l)")
+  ylab("TP (mg/l)") 
 # ggsave(filename = "TP.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 ```
 
@@ -83,8 +98,8 @@ chem.basin13.NO3 %>%
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
   scale_y_continuous() +
-  geom_point(data = chem.wallkill18.NO3,aes(SiteID, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.NO3,aes(SiteID, y=result_value), col="blue") +
+  geom_point(data = chem.wallkill18.NO3,aes(station, y=result_value, shape = flow_qual), col="red") +
+  geom_point(data = chem.wallkill17.NO3,aes(station, y=result_value), col="blue") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ggtitle("Nitrate") +
   xlab("Site ID") +
@@ -103,8 +118,8 @@ chem.basin13.Cl %>%
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
   scale_y_continuous() +
-  geom_point(data = chem.wallkill18.Cl,aes(SiteID, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.Cl,aes(SiteID, y=result_value), col="blue") +
+  geom_point(data = chem.wallkill18.Cl,aes(station, y=result_value, shape = flow_qual), col="red") +
+  geom_point(data = chem.wallkill17.Cl,aes(station, y=result_value), col="blue") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ggtitle("Chloride") +
   xlab("Site ID") +
@@ -124,8 +139,8 @@ chem.basin13.TDS %>%
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
   scale_y_continuous() +
-  geom_point(data = chem.wallkill18.TDS,aes(SiteID, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.TDS,aes(SiteID, y=result_value), col="blue") +
+  geom_point(data = chem.wallkill18.TDS,aes(station, y=result_value, shape = flow_qual), col="red") +
+  geom_point(data = chem.wallkill17.TDS,aes(station, y=result_value), col="blue") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ggtitle("Total Dissolved Solids") +
   xlab("Site ID") +
@@ -135,16 +150,16 @@ chem.basin13.TDS %>%
 
 Iron plot
 ```{r, fig.width=7, fig.height=5}
-chem.wallkill18.Fe <- filter(chem.wallkill18, chemical_name %in% "Iron")
-chem.wallkill17.Fe <- filter(chem.wallkill17, chemical_name %in% "Iron")
+chem.wallkill18.Fe <- filter(chem.wallkill18, chemical_name %in% "IRON")
+chem.wallkill17.Fe <- filter(chem.wallkill17, chemical_name %in% "IRON")
 chem.basin13.Fe <- filter(chem.basin13, Parameter %in% "Iron (total,ug/l)")
 
 chem.basin13.Fe %>%
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
   scale_y_continuous() +
-  geom_point(data = chem.wallkill18.Fe,aes(SiteID, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.Fe,aes(SiteID, y=result_value), col="blue") +
+  geom_point(data = chem.wallkill18.Fe,aes(station, y=result_value, shape = flow_qual), col="red") +
+  geom_point(data = chem.wallkill17.Fe,aes(station, y=result_value), col="blue") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ggtitle("Iron") +
   xlab("Site ID") +
@@ -155,8 +170,8 @@ chem.basin13.Fe %>%
 
 Alkalinity plot
 ```{r, fig.width=7, fig.height=5}
-chem.wallkill18.alk <- filter(chem.wallkill18, chemical_name %in% "ALKALINITY, TOTAL (AS CaCO3)" )
-chem.wallkill17.alk <- filter(chem.wallkill17, chemical_name %in% "ALKALINITY, TOTAL (AS CaCO3)" )
+chem.wallkill18.alk <- filter(chem.wallkill18, chemical_name %in% "ALKALINITY, TOTAL (AS CACO3)" )
+chem.wallkill17.alk <- filter(chem.wallkill17, chemical_name %in% "ALKALINITY, TOTAL (AS CACO3)" )
 chem.basin13.alk <- filter(chem.basin13, Parameter %in% c("Alkalinity, Total (As CaCO3) (total,mg/l)" , 
                                                         "Alkalinity, Total (As CaCO3) (NA,mg/l)",
                                                         "ALKALINITY, TOTAL (AS CaCO3) (total,mg/l)" ))
@@ -164,8 +179,8 @@ chem.basin13.alk %>%
   ggplot(aes("_Basin 13 historic",Result_Val)) +
   geom_boxplot() +
   scale_y_continuous() +
-  geom_point(data = chem.wallkill18.alk,aes(SiteID, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.alk,aes(SiteID, y=result_value), col="blue") +
+  geom_point(data = chem.wallkill18.alk,aes(station, y=result_value, shape = flow_qual), col="red") +
+  geom_point(data = chem.wallkill17.alk,aes(station, y=result_value), col="blue") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ggtitle("Alkalinity") +
   xlab("Site ID") +
@@ -176,13 +191,13 @@ chem.basin13.alk %>%
 
 Chlorophyll plot
 ```{r, fig.width=7, fig.height=5}
-chem.wallkill18.chlorophyll <- filter(chem.wallkill18, chemical_name %in% "Chlorophyll A" )
-chem.wallkill17.chlorophyll <- filter(chem.wallkill17, chemical_name %in% "Chlorophyll A" )
+chem.wallkill18.chlorophyll <- filter(chem.wallkill18, chemical_name %in% "CHLOROPHYLL A" )
+chem.wallkill17.chlorophyll <- filter(chem.wallkill17, chemical_name %in% "CHLOROPHYLL A" )
 
 chem.wallkill18.chlorophyll %>%
-  ggplot(aes(SiteID,result_value), col="red") +
+  ggplot(aes(station,result_value), col="red") +
   geom_point(col="red") +
-  geom_point(data = chem.wallkill17.chlorophyll,aes(SiteID, y=result_value), col="blue") +
+  geom_point(data = chem.wallkill17.chlorophyll,aes(station, y=result_value), col="blue") +
   scale_y_continuous() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
   ggtitle("Chlorophyll") +
