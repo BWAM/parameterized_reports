@@ -15,195 +15,676 @@ library(tidyverse)
 root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
 
 # Import chem data and split by year/project.
-chem.wallkill <- read.csv("data/Wallkill_2018/wallkill_chem_ras-2017-2018_peers-2018.csv", stringsAsFactors = FALSE,
+chem.wallkill.old <- read.csv("data/Wallkill_2018/wallkill_chem_ras-2017-2018_peers-2018.csv", stringsAsFactors = FALSE,
                  colClasses = c(fraction="character")
                  ) %>% 
-  mutate(chemical_name = toupper(chemical_name))
+  mutate(chemical_name = toupper(chemical_name)) %>% 
+  filter(!validator_qualifiers == "r")
 
-  # mutate(station = toupper(station))
+chem.wallkill <- read.csv("data/Wallkill_2018/wallkill_chem_ras-2017-2018_peers-2018_2.csv", stringsAsFactors = FALSE,
+                 colClasses = c(fraction="character")
+                 ) %>% 
+  mutate(chemical_name = toupper(chemical_name)) %>% 
+  filter(!validator_qualifiers == "r")
 
-# Import site order and join to chem
-site.order <- read.csv("data/Wallkill_2018/wallkill_station-order_up-to-down.csv") %>% 
-  mutate(station = paste0("13-",station))
+# Import field data, format and join
+field.18.chemonly <- read.csv("data/Wallkill_2018/field/Chem_Only_Field_Surveys_Wallkill_18.csv", stringsAsFactors = FALSE) %>% 
+  select(SITE_LOC_ID, COLL_DATE, TEMP, COND, PH, DO, PERCENT_SAT) 
+field.18.macro <- read.csv("data/Wallkill_2018/field/Macro_Field_Surveys_Wallkill_18.csv", stringsAsFactors = FALSE) %>% 
+  select(SITE_LOC_ID, COLL_DATE, TEMP, COND, PH, DO, PERCENT_SAT)
+field.18 <- bind_rows(field.18.chemonly, field.18.macro) %>% 
+  rename_all(tolower) %>% 
+  rename(station = site_loc_id) %>% 
+  mutate(station = tolower(station)) %>% 
+  mutate(project_name = "wallkill special study 2018") 
+field.17 <- read.csv("data/Wallkill_2018/field/wallkill_field_2017.csv", stringsAsFactors = FALSE) %>% 
+  select(station, coll_date, temp, cond, ph, do, percent_sat) %>% 
+  mutate(project_name = "wallkill special study 2017")
+field.all <- bind_rows(field.17, field.18) %>% 
+  rename(sample_date = coll_date) %>%
+  mutate(sample_date = as.Date(sample_date, "%m/%d/%Y"))
+
+# Import site order and join to data
+site.order <- read.csv("data/Wallkill_2018/wallkill_station-order_up-to-down_2.csv", stringsAsFactors = FALSE) %>% 
+  mutate(station = str_replace(station, "13-poch-0.1", "13-poch-1.8")) %>%
+  mutate(station = str_replace(station, "13-swak-1.1", "13-swak-1.7"))
+
 chem.wallkill <- chem.wallkill %>% 
-  left_join(site.order, by = 'station') %>% 
+  left_join(site.order, by = 'station') 
+  # arrange(order) %>% 
+  # mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+
+field.all <- field.all %>% 
+  left_join(site.order, by = 'station')  
+
+# Import 2018 flow data and join to 2018 chem.
+# flow.qual.wallkill18 <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "simplified qual")
+# flow.qual.wallkill18$sample_date <- as.Date(flow.qual.wallkill18$sample_date)
+# flow.qual.wallkill18$project_name <- "wallkill special study 2018"
+
+flow.quant.wallkill18 <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "flow") %>%
+  select(station, sample_date, flow_qual, flow_quant_cfs) %>% 
+  mutate(station = tolower(station))
+flow.quant.wallkill18$sample_date <- as.Date(flow.quant.wallkill18$sample_date)
+flow.quant.wallkill18$project_name <- "wallkill special study 2018"
+
+chem.wallkill$sample_date <- as.Date(chem.wallkill$date_time)
+# chem.wallkill <- chem.wallkill %>% 
+#   left_join(flow.qual.wallkill18, by = c('sample_date', 'project_name')) %>% 
+#   mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual))
+chem.wallkill <- chem.wallkill %>% 
+  left_join(flow.quant.wallkill18, by = c('station', 'sample_date', 'project_name')) %>% 
+  mutate(flow_quant_cfs = ifelse(is.na(flow_quant_cfs), NA , flow_quant_cfs)) %>% 
+  mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual)) %>% 
   arrange(order) %>% 
   mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
 
-# Import 2018 qualitative flow data and join to 2018 chem.
-flow.wallkill18 <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "simplified qual")
-flow.wallkill18$sample_date <- as.Date(flow.wallkill18$sample_date)
-flow.wallkill18$project_name <- "wallkill ras 2018"
+field.all <- field.all %>% 
+  left_join(flow.quant.wallkill18, by = c('station', 'sample_date', 'project_name')) %>% 
+  mutate(flow_quant_cfs = ifelse(is.na(flow_quant_cfs), NA , flow_quant_cfs)) %>% 
+  mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual)) %>% 
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
 
-chem.wallkill$sample_date <- as.Date(chem.wallkill$date_time)
-chem.wallkill <- chem.wallkill %>% 
-  left_join(flow.wallkill18, by = c('sample_date', 'project_name')) %>% 
-  mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual))
 
 # Import basin 13 chem data (subset basin in ArcMap)
-chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
+# chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
 
 # Import survey in-situ chem data and prep as needed
  #...
   #...
 
 ### Use below for listing and choosing chem params for plotting (multiple variations present in historic data) ###
-# sort(unique(chem.wallkill17$chemical_name))
-# sort(unique(chem.wallkill18$chemical_name))
+# sort(unique(chem.wallkill$chemical_name))
 # sort(unique(chem.basin13$Parameter))
 
+# Looking into why so much 2018 data without flow...
+chem.wallkill.2018noflow <- chem.wallkill %>% 
+  filter(project_name == "wallkill special study 2018") %>% 
+  filter(flow_qual == "not observed") %>% 
+  mutate(site_date = paste0(station,"_",sample_date))
+
+```
+Calculate loads
+```{r}
+# Equation and conversion factor from: https://dep.wv.gov/WWE/getinvolved/sos/Pages/PollutantLoads.aspx
+# kg per day conversion factor calculated from lbs per day conversion factor (5.39 * 0.453592)
+chem.wallkill <- chem.wallkill %>% 
+  # mutate(load_lbs_per_day = ifelse(result_unit == "mg/l", result_value * flow_quant_cfs * 5.39, NA)) %>% 
+  mutate(load_kg_per_day = ifelse(result_unit == "mg/l", result_value * flow_quant_cfs * 2.4449, NA)) %>% 
+  # mutate(load_lbs_per_day = ifelse(result_unit == "ug/l", result_value * 0.001 * flow_quant_cfs * 5.39, load_lbs_per_day))
+  mutate(load_kg_per_day = ifelse(result_unit == "ug/l", result_value * 0.001 * flow_quant_cfs * 2.4449, load_kg_per_day))
 
 ```
 
-TP plot
-# REMEMBER TO REORDER SITEIDs BY ORDER #
-```{r, fig.width=9, fig.height=6}
-chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
-                                                          "Phosphorus (NA,mg/l)",
-                                                          "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
-chem.wallkill.TP <- chem.wallkill %>% 
-  filter(chemical_name %in% "PHOSPHORUS, TOTAL (AS P)") %>% 
-  filter(!project_name %in% c("wallkill peers 2018"))
+Reformat data for plot aesthetics
+```{r}
+# Rename fields, projects, and change station IDs to uppercase for easier reading. This function removes the ordering so need to reapply.
+chem.wallkill <- chem.wallkill %>%
+  # mutate(project_name = str_replace(project_name, "wallkill peers 2018", "Wallkill PEERS 2018")) %>% 
+  # mutate(project_name = str_replace(project_name, "wallkill special study 2017", "Wallkill Special Study 2017")) %>% 
+  # mutate(project_name = str_replace(project_name, "wallkill special study 2018", "Wallkill Special Study 2018")) %>% 
+  # rename(Project = project_name) %>% 
+  # rename(Flow_condition = flow_qual) %>% 
+  mutate(station = toupper(station)) %>%
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
 
+field.all <- field.all %>%
+  mutate(station = toupper(station)) %>%
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+```
+
+Field data plots
+```{r, fig.width=9, fig.height=6}
+# SPCO
+ggplot()+
+  geom_point(data = field.all, aes(x = station, y = cond, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "blue")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Specific Conductance") +
+  xlab("Site ID") +
+  ylab("SPCO (uS/cm)") 
+ggsave(filename = "Wallkill_field_SpCond.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# TEMP
+ggplot()+
+  geom_point(data = field.all, aes(x = station, y = temp, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "blue")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Temperature") +
+  xlab("Site ID") +
+  ylab("Temp (C)") 
+ggsave(filename = "Wallkill_field_temp.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# DO
+ggplot()+
+  geom_point(data = field.all, aes(x = station, y = do, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "blue")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("DO concentration") +
+  xlab("Site ID") +
+  ylab("DO (mg/l)")
+ggsave(filename = "Wallkill_field_DO.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# pH
+ggplot()+
+  geom_point(data = field.all, aes(x = station, y = ph, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "blue")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("pH") +
+  xlab("Site ID") +
+  ylab("pH") 
+ggsave(filename = "Wallkill_field_pH.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+```
+
+
+TP plots
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
+#                                                           "Phosphorus (NA,mg/l)",
+#                                                           "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
+chem.wallkill.TP <- chem.wallkill %>% 
+  filter(chemical_name %in% "PHOSPHORUS, TOTAL (AS P)")  
+  # mutate(station = toupper(station))
+  # filter(!project_name %in% c("wallkill peers 2018"))
+
+# Concentration plot (linear)
 ggplot()+
   geom_point(data = chem.wallkill.TP, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
-  geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
-chem.basin13.TP %>%
-  # mutate(station = factor(station, c(unique(station), levels(chem.wallkill.TP$station)))) %>% 
-  ggplot(aes("_Basin 13 historic",Result_Val)) +
-  geom_boxplot() +
-  # scale_y_continuous() +
-  scale_y_log10() +
-  geom_point(data = chem.wallkill.TP, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
-  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill ras 2017" = "blue", "wallkill ras 2018" = "red")) +
-  scale_shape_manual(values = c("baseline" = 16, "event" = 2, "not observed" = 1)) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  ggtitle("Total Phosphorus") +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  geom_hline(yintercept = 0.075) +
+  ggtitle("Total Phosphorus concentration") +
   xlab("Site ID") +
-  ylab("TP (mg/l)") 
-# ggsave(filename = "TP.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+  ylab("[TP] (mg/l)") 
+ggsave(filename = "Wallkill_TP_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.TP, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "blue")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  geom_hline(yintercept = 0.075) +
+  ggtitle("Total Phosphorus concentration (log10)") +
+  xlab("Site ID") +
+  ylab("[TP] (mg/l)") 
+ggsave(filename = "Wallkill_TP_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.TP, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Total Phosphorus loading") +
+  xlab("Site ID") +
+  ylab("TP load (kg/day)") 
+ggsave(filename = "Wallkill_TP_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+```
+
+TP boxplots by flow
+```{r, fig.width=17, fig.height=9}
+
+# chem.wallkill.TP %>% 
+#   filter(project_name == "wallkill special study 2018") %>% 
+#   filter(!flow_qual == "not observed") %>% 
+# ggplot(aes(x = station, y = result_value, fill = flow_qual))+
+#   geom_boxplot(position = position_dodge(1)) +
+#   # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+#   scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "blue", "wallkill special study 2018" = "red")) +
+#   scale_shape_manual(values = c("baseline" = 16, "event" = 2, "not observed" = 1)) +
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+#   scale_y_log10() +
+#   geom_hline(yintercept = 0.075) +
+#   ggtitle("Total Phosphorus") +
+#   # xlab("Site ID") +
+#   ylab("TP (mg/l)") 
+#   # facet_wrap(~station, scales = "free_x")
+# 
+# chem.wallkill.TP %>% 
+#   filter(project_name == "wallkill special study 2018") %>% 
+#   ggplot(aes(x = flow_qual, y = result_value, fill = flow_qual))+
+#   geom_boxplot(position = position_dodge(1)) +
+#   # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+#   scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "blue", "wallkill special study 2018" = "red")) +
+#   scale_shape_manual(values = c("baseline" = 16, "event" = 2, "not observed" = 1)) +
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+#   scale_y_log10() +
+#   geom_hline(yintercept = 0.075) +
+#   ggtitle("Total Phosphorus") +
+#   # xlab("Site ID") +
+#   ylab("TP (mg/l)") 
+
+```
+
+Ammonia plots
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.NH3 <- filter(chem.basin13, Parameter %in% c("Nitrogen, Ammonia (As N) (total,mg/l)" ,
+#                                                           "Nitrogen, Ammonia (As N) (total,mg/l)"))
+chem.wallkill.NH3 <- chem.wallkill %>% 
+  filter(chemical_name %in% "NITROGEN, AMMONIA (AS N)")  
+  # mutate(station = toupper(station))
+  # filter(!project_name %in% c("wallkill peers 2018"))
+
+# Concentration plot (linear)
+ggplot()+
+  geom_point(data = chem.wallkill.NH3, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Ammonia concentration") +
+  xlab("Site ID") +
+  ylab("[NH3] (mg/l)") 
+ggsave(filename = "Wallkill_Ammonia_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.NH3, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Ammonia concentration (log10)") +
+  xlab("Site ID") +
+  ylab("[NH3] (mg/l)") 
+ggsave(filename = "Wallkill_Ammonia_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.NH3, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Ammonia loading") +
+  xlab("Site ID") +
+  ylab("NH3 load (kg/day)") 
+ggsave(filename = "Wallkill_Ammonia_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
 ```
 
 
 NO3 plot
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.NO3 <- filter(chem.wallkill18, chemical_name %in% "NITROGEN, NITRATE (AS N)")
-chem.wallkill17.NO3 <- filter(chem.wallkill17, chemical_name %in% "NITROGEN, NITRATE (AS N)")
-chem.basin13.NO3 <- filter(chem.basin13, Parameter %in% c("Nitrogen, Nitrate (As N) (NA,mg/l)", 
-                                                        "NITROGEN, NITRATE (AS N) (total,mg/l)", 
-                                                        "Nitrogen, Nitrate (As N) (total,mg/l)"))
-chem.basin13.NO3 %>%
-  ggplot(aes("_Basin 13 historic",Result_Val)) +
-  geom_boxplot() +
-  scale_y_continuous() +
-  geom_point(data = chem.wallkill18.NO3,aes(station, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.NO3,aes(station, y=result_value), col="blue") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  ggtitle("Nitrate") +
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.NO3 <- filter(chem.basin13, Parameter %in% c("Nitrogen, Nitrate (As N) (NA,mg/l)", 
+#                                                         "NITROGEN, NITRATE (AS N) (total,mg/l)", 
+#                                                         "Nitrogen, Nitrate (As N) (total,mg/l)"))
+
+chem.wallkill.NO3 <- chem.wallkill %>% 
+  filter(chemical_name %in% "NITROGEN, NITRATE (AS N)")
+  # filter(!project_name %in% c("wallkill peers 2018"))
+
+# Concentration plot
+ggplot()+
+  geom_point(data = chem.wallkill.NO3, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Nitrate concentration") +
   xlab("Site ID") +
-  ylab("NO3 (mg/L)")
-# ggsave(filename = "NO3.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+  ylab("[NO3] (mg/l)")
+ggsave(filename = "Wallkill_Nitrate_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.NO3, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Nitrate concentration (log10)") +
+  xlab("Site ID") +
+  ylab("[NO3] (mg/l)")
+ggsave(filename = "Wallkill_Nitrate_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.NO3, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Nitrate loading") +
+  xlab("Site ID") +
+  ylab("NO3 load (kg/day)")
+ggsave(filename = "Wallkill_Nitrate_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 ```
 
 Chloride plot
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.Cl <- filter(chem.wallkill18, chemical_name %in% "CHLORIDE (AS CL)")
-chem.wallkill17.Cl <- filter(chem.wallkill17, chemical_name %in% "CHLORIDE (AS CL)")
-chem.basin13.Cl <- filter(chem.basin13, Parameter %in% c("CHLORIDE (AS CL) (total,mg/l)", 
-                                                        "Chloride (As Cl) (total,mg/l)"))
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.Cl <- filter(chem.basin13, Parameter %in% c("CHLORIDE (AS CL) (total,mg/l)", 
+#                                                         "Chloride (As Cl) (total,mg/l)"))
 
-chem.basin13.Cl %>%
-  ggplot(aes("_Basin 13 historic",Result_Val)) +
-  geom_boxplot() +
-  scale_y_continuous() +
-  geom_point(data = chem.wallkill18.Cl,aes(station, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.Cl,aes(station, y=result_value), col="blue") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  ggtitle("Chloride") +
+chem.wallkill.Cl <- chem.wallkill %>% 
+  filter(chemical_name %in% "CHLORIDE (AS CL)")
+
+# Concentration plot
+ggplot()+
+  geom_point(data = chem.wallkill.Cl, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Chloride concentration") +
   xlab("Site ID") +
-  ylab("Cl (mg/L)")
-# ggsave(filename = "Chloride.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+  ylab("Cl (mg/l)")
+ggsave(filename = "Wallkill_Chloride_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.Cl, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Chloride concentration (log10)") +
+  xlab("Site ID") +
+  ylab("[Cl] (mg/l)")
+ggsave(filename = "Wallkill_Chloride_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.Cl, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Chloride loading") +
+  xlab("Site ID") +
+  ylab("Cl load (kg/day)")
+ggsave(filename = "Wallkill_Chloride_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 ```
 
 TDS plot
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.TDS <- filter(chem.wallkill18, chemical_name %in% "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE)")
-chem.wallkill17.TDS <- filter(chem.wallkill17, chemical_name %in% "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE)")
-chem.basin13.TDS <- filter(chem.basin13, Parameter %in% c("Total Dissolved Solids (Residue, Filterable) (NA,mg/l)" , 
-                                                        "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE) (total,mg/l)",
-                                                        "Total Dissolved Solids (Residue, Filterable) (total,mg/l)"))
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.TDS <- filter(chem.basin13, Parameter %in% c("Total Dissolved Solids (Residue, Filterable) (NA,mg/l)" , 
+#                                                         "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE) (total,mg/l)",
+#                                                         "Total Dissolved Solids (Residue, Filterable) (total,mg/l)"))
 
-chem.basin13.TDS %>%
-  ggplot(aes("_Basin 13 historic",Result_Val)) +
-  geom_boxplot() +
-  scale_y_continuous() +
-  geom_point(data = chem.wallkill18.TDS,aes(station, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.TDS,aes(station, y=result_value), col="blue") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+chem.wallkill.TDS <- chem.wallkill %>% 
+  filter(chemical_name %in% "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE)")
+
+# Concentration plot
+ggplot()+
+  geom_point(data = chem.wallkill.TDS, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
   ggtitle("Total Dissolved Solids") +
   xlab("Site ID") +
-  ylab("TDS (mg/L)")
-# ggsave(filename = "TDS.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+  ylab("[TDS] (mg/l)")
+ggsave(filename = "Wallkill_TDS_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.TDS, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Total Dissolved Solids (log10)") +
+  xlab("Site ID") +
+  ylab("[TDS] (mg/l)")
+ggsave(filename = "Wallkill_TDS_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.TDS, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Total Dissolved Solids loading") +
+  xlab("Site ID") +
+  ylab("TDS load (kg/day)") 
+ggsave(filename = "Wallkill_TDS_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 ```
 
 Iron plot
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.Fe <- filter(chem.wallkill18, chemical_name %in% "IRON")
-chem.wallkill17.Fe <- filter(chem.wallkill17, chemical_name %in% "IRON")
-chem.basin13.Fe <- filter(chem.basin13, Parameter %in% "Iron (total,ug/l)")
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.Fe <- filter(chem.basin13, Parameter %in% "Iron (total,ug/l)")
 
-chem.basin13.Fe %>%
-  ggplot(aes("_Basin 13 historic",Result_Val)) +
-  geom_boxplot() +
-  scale_y_continuous() +
-  geom_point(data = chem.wallkill18.Fe,aes(station, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.Fe,aes(station, y=result_value), col="blue") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  ggtitle("Iron") +
+chem.wallkill.Fe <- chem.wallkill %>% 
+  filter(chemical_name %in% "IRON")
+
+# Concentration plot
+ggplot()+
+  geom_point(data = chem.wallkill.TDS, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Iron concentration") +
   xlab("Site ID") +
   ylab("Fe (μg/l)")
-# ggsave(filename = "Iron.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+ggsave(filename = "Wallkill_Iron_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.TDS, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Iron concentration (log10)") +
+  xlab("Site ID") +
+  ylab("Fe (μg/l)")
+ggsave(filename = "Wallkill_Iron_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.TDS, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Iron loading") +
+  xlab("Site ID") +
+  ylab("Fe load (kg/day)")
+ggsave(filename = "Wallkill_Iron_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 
 ```
 
 Alkalinity plot
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.alk <- filter(chem.wallkill18, chemical_name %in% "ALKALINITY, TOTAL (AS CACO3)" )
-chem.wallkill17.alk <- filter(chem.wallkill17, chemical_name %in% "ALKALINITY, TOTAL (AS CACO3)" )
-chem.basin13.alk <- filter(chem.basin13, Parameter %in% c("Alkalinity, Total (As CaCO3) (total,mg/l)" , 
-                                                        "Alkalinity, Total (As CaCO3) (NA,mg/l)",
-                                                        "ALKALINITY, TOTAL (AS CaCO3) (total,mg/l)" ))
-chem.basin13.alk %>%
-  ggplot(aes("_Basin 13 historic",Result_Val)) +
-  geom_boxplot() +
-  scale_y_continuous() +
-  geom_point(data = chem.wallkill18.alk,aes(station, y=result_value, shape = flow_qual), col="red") +
-  geom_point(data = chem.wallkill17.alk,aes(station, y=result_value), col="blue") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  ggtitle("Alkalinity") +
+```{r, fig.width=9, fig.height=6}
+# chem.basin13.alk <- filter(chem.basin13, Parameter %in% c("Alkalinity, Total (As CaCO3) (total,mg/l)" , 
+#                                                         "Alkalinity, Total (As CaCO3) (NA,mg/l)",
+#                                                         "ALKALINITY, TOTAL (AS CaCO3) (total,mg/l)" ))
+
+chem.wallkill.alk <- chem.wallkill %>% 
+  filter(chemical_name %in% "ALKALINITY, TOTAL (AS CACO3)" )
+
+
+# Concentration plot
+ggplot()+
+  geom_point(data = chem.wallkill.alk, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Alkalinity (as CaCO3) concentration") +
   xlab("Site ID") +
   ylab("Alkalinity (as CaCO3) (mg/l)")
-# ggsave(filename = "Alk.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+ggsave(filename = "Wallkill_Alk_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.alk, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Alkalinity (as CaCO3) concentration (log10)") +
+  xlab("Site ID") +
+  ylab("Alkalinity (as CaCO3) (mg/l)")
+ggsave(filename = "Wallkill_Alk_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.alk, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Alkalinity (as CaCO3) loading") +
+  xlab("Site ID") +
+  ylab("Alkalinity (as CaCO3) load (kg/day)")
+ggsave(filename = "Wallkill_Alk_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
 
 ```
 
 Chlorophyll plot
-```{r, fig.width=7, fig.height=5}
-chem.wallkill18.chlorophyll <- filter(chem.wallkill18, chemical_name %in% "CHLOROPHYLL A" )
-chem.wallkill17.chlorophyll <- filter(chem.wallkill17, chemical_name %in% "CHLOROPHYLL A" )
+```{r, fig.width=9, fig.height=6}
 
-chem.wallkill18.chlorophyll %>%
-  ggplot(aes(station,result_value), col="red") +
-  geom_point(col="red") +
-  geom_point(data = chem.wallkill17.chlorophyll,aes(station, y=result_value), col="blue") +
-  scale_y_continuous() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+chem.wallkill.chlorophyll <- chem.wallkill %>% 
+  filter(chemical_name %in% "CHLOROPHYLL A" )
+
+
+
+# Concentration plot
+ggplot()+
+  geom_point(data = chem.wallkill.chlorophyll, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
   ggtitle("Chlorophyll") +
   xlab("Site ID") +
   ylab("Chlorophyll (μg/l)")
-# ggsave(filename = "chlorophyll.png", width = 7, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+ggsave(filename = "Wallkill_Chlorophyll_conc.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Concentration plot (log10)
+ggplot()+
+  geom_point(data = chem.wallkill.chlorophyll, aes(x = station, y = result_value, shape = flow_qual, color = project_name), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 1)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  # geom_hline(yintercept = 0.075) +
+  ggtitle("Chlorophyll (log10)") +
+  xlab("Site ID") +
+  ylab("Chlorophyll (μg/l)")
+ggsave(filename = "Wallkill_Chlorophyll_conc_log.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
+# Load plot
+ggplot()+
+  geom_point(data = chem.wallkill.chlorophyll, aes(x = station, y = load_kg_per_day, shape = flow_qual, color = project_name), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle("Chlorophyll loading") +
+  xlab("Site ID") +
+  ylab("Chlorophyll load (kg/day)")
+ggsave(filename = "Wallkill_Chlorophyll_load.png", width = 10, height = 6, units = "in", path = file.path(root.dir, "data/Wallkill_2018/plots"))
+
 ```
 
 

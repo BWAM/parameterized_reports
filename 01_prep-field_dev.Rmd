@@ -1,0 +1,197 @@
+---
+title: "Untitled"
+author: "Zachary M. Smith"
+date: "5/2/2019"
+output: html_document
+---
+
+
+```{r}
+suppressPackageStartupMessages(
+  library(tidyverse)
+)
+library(leaflet)
+```
+
+Establish file path to the project directory. This will be used to access data.
+```{r}
+project.path <- rprojroot::find_rstudio_root_file()
+data.path <- file.path(project.path, "data", "Wallkill_2018", "field")
+```
+### clean_up
+
+The `clean_up()` function is used to aid in the standardization of the data. The processes described below generally eliminate some of most common string features that can cause erroneous mismatching.
+
+1. `tolower()`- all column names and character column values are converted to lower case strings. 
+2. `trimws()` - leading and trailing whitespace is removed from all column names and character columns.
+3. `gsub()`- more than one space is removed from strings in character columns.
+```{r}
+clean_up <- function(x) {
+  names(x) <- tolower(names(x))
+  names(x) <- trimws(names(x))
+  
+  final.df <- dplyr::mutate_if(x,
+                               is.character,
+                               list(~trimws(tolower(.))))  
+  
+  # remove instances of more than one space
+  final.df <- dplyr::mutate_if(final.df,
+                               is.character,
+                               list(~gsub("[' ']{2,}", " ", .)))  
+  
+  final.df
+}
+```
+## Stations
+
+On 4/30/2019, A.J. Smith suggested that we drop stations sampled for HABs monitoring (i.e., "13-gunk-40.3", "13-gunk-t35-0.2", "13-gunk-37.7", and "13-lgun-6.0").
+```{r}
+ex.station.vec <- c("13-gunk-40.3",
+                    "13-gunk_t35-0.2",
+                    "13-gunk-37.7",
+                    "13-lgun-6.0")
+```
+
+## Field Data
+
+### Import
+
+#### 2017
+
+```{r}
+# chem17.df <- chem.df %>% 
+#   filter(project_name %in% "wallkill special study 2017")
+
+field17.df <- file.path(data.path,
+                      "wallkill_field_2017.csv") %>% 
+  read.csv(stringsAsFactors = FALSE,
+           na.strings = c("", " ", "NA")) %>% 
+  clean_up() %>% 
+  rename(station = site_loc_id,
+         date_time = coll_date_time) %>% 
+  mutate(station = str_remove_all(station, "b_"),
+         station = str_remove_all(station, "r_")) %>% 
+  mutate(date_time = as.POSIXct(date_time, format = "%m/%d/%Y %H:%M"),
+         date_time = as.character(date_time),
+         do = as.numeric(do)) %>% 
+  semi_join(chem17.df, by = "station")
+```
+
+Check for stations present in the Wallkill Special Study 2017 chemistry data that are absent from the 2017 field data.
+```{r}
+anti_join(chem17.df, field17.df, by = "station") %>% 
+  select(station) %>% 
+  distinct() %>% 
+  knitr::kable()
+```
+
+#### 2018
+
+Import Wallkill 2018 field data. Perform general data standardization with the `clean_up()` function. Convert the "coll_date_time" column to the calss POSIXct.
+```{r}
+field18.df <- file.path(data.path,
+                      "Wallkill_survey_Chem_Only.csv") %>% 
+  read.csv(stringsAsFactors = FALSE,
+           na.strings = c(""," ","NA")) %>% 
+  clean_up() %>% 
+  rename(station = site_loc_id) %>% 
+  mutate(date_time = as.POSIXct(coll_date_time, format = "%m/%d/%Y %H:%M"),
+         date_time = as.character(date_time))
+```
+
+Check for stations present in the Wallkill Special Study 2018 chemistry data that are absent from the 2018 field data.
+```{r}
+chem18.df <- chem.df %>% 
+  filter(project_name %in% "wallkill special study 2018")
+
+anti_join(chem18.df, field18.df, by = "station") %>% 
+  select(station) %>% 
+  distinct() %>% 
+  knitr::kable()
+```
+
+### Preprocessing
+
+This data frame is broken into three pieces (general information, ambient chemistry data, and user preception data) to make it easier to manipulate the data.
+
+#### Join
+
+```{r}
+field.df <- bind_rows(field17.df, field18.df)
+```
+
+
+#### General Information
+
+The code below checks to see if the column "y" has equivalent values to "field_lat and if "x" has equivalent values to "field_lon". These values are equivalent, and therefore "x" and "y" can be excluded from this data frame.
+```{r}
+any(field.df$field_lat != field.df$y | field.df$field_lon != field.df$x)
+```
+
+General field information is selected to represent this data frame.
+```{r}
+field_info.df <- field.df %>% 
+  select(project, station:descript, date_time,
+         new_site, update_site,
+         coll_date_time, crew, info_type, hablab_id_num,
+         bloom_desc, bloom_desc_2, r_hablab_id, s_hablab_id,
+         current_weather, past_weather,
+         water_chem, qa_qc_type,
+         samp_loc, equip_used,
+         tox, 
+         prim_contact, prim_variable, sec_contact, sec_variable,
+         notes)
+```
+
+#### Ambient Chemistry Data
+
+The ambient chemistry data, collected with a sonde, is transformed to a long data format. The column "data_type" is added to indicate that values in these rows are represent the ambient chemistry data.
+```{r}
+field_chem.df <- field.df %>% 
+  select(project, station, date_time,
+         temp:salinity) %>% 
+  gather(param, value, temp:salinity) %>% 
+  mutate(data_type = "amb_chem")
+```
+
+
+```{r, eval=FALSE}
+#### User Preception Data
+
+# The user preception data is transformed to a long data format. The column "data_type" is added to indicate that values in these rows are represent the user preception data.
+field_precep.df <- field.df %>% 
+  select(project, site_loc_id, date_time,
+         water_clarity:discharge_pipes) %>% 
+  gather(param, value, water_clarity:discharge_pipes) %>% 
+  mutate(data_type = "user_preception")
+```
+
+#### Combine the Data
+
+Append the ambient chemistry and user preception data into a single data frame. Again, the "data_type" column can be used to distinquish between these two sets of data.
+```{r}
+field_values.df <- bind_rows(field_chem.df, field_precep.df)
+```
+
+The `field_values.df` data frame is joined with the general field info.
+```{r}
+field_final.df <- full_join(field_info.df, field_values.df,
+                            by = c("project", "site_loc_id", "date_time")) %>% 
+  rename(station = site_loc_id,
+         project_name = project) %>% 
+  filter(!station %in% ex.station.vec) %>% 
+  mutate(project_name = "wallkill special study 2018")
+```
+
+The data is exported as a CSV and manually added to the Wallkill SharePoint "finalized" folder.
+```{r}
+data.table::fwrite(field_final.df ,
+                   file.path(data.path,
+                             "finalized",
+                             "wallkill_field_2018.csv"))
+```
+
+Clear the global environment of unnecessary objects.
+```{r}
+rm(field.df, field_info.df, field_chem.df, field_precep.df, field_values.df)
+```
