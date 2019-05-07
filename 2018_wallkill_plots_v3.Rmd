@@ -1,0 +1,375 @@
+---
+title: "Wallkill chemistry plots"
+author: "Gavin Lemley"
+date: "May 3rd, 2019"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+5/7/19 - V3: creating plots using funcitons.
+
+Load packages, import and prep data
+```{r echo = FALSE}
+library(tidyverse)
+
+# Used for plot exports
+root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
+
+# Import chem data and split by year/project.
+chem.wallkill <- read.csv("data/Wallkill_2018/wallkill_chem_ras-2017-2018_peers-2018_2.csv", stringsAsFactors = FALSE,
+                 colClasses = c(fraction="character")
+                 ) %>% 
+  mutate(chemical_name = toupper(chemical_name)) %>% 
+  filter(!validator_qualifiers == "r") %>%
+  mutate(sample_date = as.Date(date_time))
+
+# Import field data, format and join
+field.18.chemonly <- read.csv("data/Wallkill_2018/field/Chem_Only_Field_Surveys_Wallkill_18.csv", stringsAsFactors = FALSE) %>% 
+  select(SITE_LOC_ID, COLL_DATE, TEMP, COND, PH, DO, PERCENT_SAT) 
+field.18.macro <- read.csv("data/Wallkill_2018/field/Macro_Field_Surveys_Wallkill_18.csv", stringsAsFactors = FALSE) %>% 
+  select(SITE_LOC_ID, COLL_DATE, TEMP, COND, PH, DO, PERCENT_SAT)
+field.18 <- bind_rows(field.18.chemonly, field.18.macro) %>% 
+  rename_all(tolower) %>% 
+  rename(station = site_loc_id) %>% 
+  mutate(station = tolower(station)) %>% 
+  mutate(project_name = "wallkill special study 2018") 
+field.17 <- read.csv("data/Wallkill_2018/field/wallkill_field_2017.csv", stringsAsFactors = FALSE) %>% 
+  select(station, coll_date, temp, cond, ph, do, percent_sat) %>% 
+  mutate(project_name = "wallkill special study 2017") 
+field.all <- bind_rows(field.17, field.18) %>% 
+  filter(!station %in% c("13-gunk-40.3", "13-gunk_t35-0.2", "13-gunk-37.7", "13-lgun-6.0")) %>% 
+  rename(sample_date = coll_date) %>%
+  mutate(sample_date = as.Date(sample_date, "%m/%d/%Y"))
+
+# Import site order and join to data
+site.order <- read.csv("data/Wallkill_2018/wallkill_station-order_up-to-down_2.csv", stringsAsFactors = FALSE) %>% 
+  mutate(station = str_replace(station, "13-poch-0.1", "13-poch-1.8")) %>%
+  mutate(station = str_replace(station, "13-swak-1.1", "13-swak-1.7"))
+
+chem.wallkill <- chem.wallkill %>% 
+  left_join(site.order, by = 'station') 
+
+field.all <- field.all %>% 
+  left_join(site.order, by = 'station')  
+
+# Import 2018 flow data and join to 2018 chem.
+flow.qual.wallkill <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "simplified qual") %>% 
+  mutate(sample_date = as.Date(sample_date))
+
+flow.quant.wallkill18 <- readxl::read_excel("data/Wallkill_2018/Wallkill_2018_flow_fieldsheets.xlsx", sheet = "flow") %>%
+  select(station, sample_date, flow_quant_cfs) %>% 
+  mutate(station = tolower(station)) %>% 
+  mutate(sample_date = as.Date(sample_date)) %>% 
+  mutate(project_name = "wallkill special study 2018")
+
+chem.wallkill <- chem.wallkill %>% 
+  left_join(flow.qual.wallkill, by = 'sample_date') %>%
+  # mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual)) %>% 
+  left_join(flow.quant.wallkill18, by = c('station', 'sample_date', 'project_name')) %>% 
+  mutate(flow_quant_cfs = ifelse(is.na(flow_quant_cfs), NA , flow_quant_cfs)) %>% 
+  mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual)) %>% 
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+
+field.all <- field.all %>% 
+  left_join(flow.qual.wallkill, by = 'sample_date') %>%
+  left_join(flow.quant.wallkill18, by = c('station', 'sample_date', 'project_name')) %>% 
+  mutate(flow_quant_cfs = ifelse(is.na(flow_quant_cfs), NA , flow_quant_cfs)) %>% 
+  mutate(flow_qual = ifelse(is.na(flow_qual), "not observed", flow_qual)) %>%
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+
+# Import basin 13 chem data (subset basin in ArcMap)
+# chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
+
+### Use below for listing and choosing chem params for plotting (multiple variations present in historic data) ###
+# sort(unique(chem.wallkill$chemical_name))
+# sort(unique(chem.basin13$Parameter))
+
+```
+
+Calculating loads
+```{r echo = TRUE}
+# Equation and conversion factor from: https://dep.wv.gov/WWE/getinvolved/sos/Pages/PollutantLoads.aspx
+# kg per day conversion factor calculated from lbs per day conversion factor (5.39 * 0.453592)
+chem.wallkill <- chem.wallkill %>% 
+  # mutate(load_lbs_per_day = ifelse(result_unit == "mg/l", result_value * flow_quant_cfs * 5.39, NA)) %>% 
+  mutate(load_kg_per_day = ifelse(result_unit == "mg/l", result_value * flow_quant_cfs * 2.4449, NA)) %>% 
+  # mutate(load_lbs_per_day = ifelse(result_unit == "ug/l", result_value * 0.001 * flow_quant_cfs * 5.39, load_lbs_per_day))
+  mutate(load_kg_per_day = ifelse(result_unit == "ug/l", result_value * 0.001 * flow_quant_cfs * 2.4449, load_kg_per_day))
+
+```
+
+Reformat data for plot aesthetics
+```{r echo = FALSE}
+# Rename fields, projects, and change station IDs to uppercase for easier reading. This function removes the ordering so need to reapply.
+chem.wallkill <- chem.wallkill %>%
+  mutate(station_type = str_replace(station_type, "peers_2018", "PEERS 2018")) %>%
+  mutate(station_type = str_replace(station_type, "special_study", "DEC Special Study 17-18")) %>%
+  # mutate(project_name = str_replace(project_name, "wallkill peers 2018", "Wallkill PEERS 2018")) %>%
+  # mutate(project_name = str_replace(project_name, "wallkill special study 2017", "Wallkill Special Study 2017")) %>% 
+  # mutate(project_name = str_replace(project_name, "wallkill special study 2018", "Wallkill Special Study 2018")) %>% 
+  rename(Project = station_type) %>%
+  rename(Flow_Condition = flow_qual) %>%
+  mutate(station = toupper(station)) %>%
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+
+field.all <- field.all %>%
+  mutate(station = toupper(station)) %>%
+  arrange(order) %>% 
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+```
+
+Plot functions
+```{r echo = FALSE, fig.width=9, fig.height=6}
+
+plot.field <- function(param, title, ylabel){
+  ggplot()+
+  geom_point(data = field.all, aes(x = station, y = param, shape = project_name, color = flow_qual), size = 2) +
+  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_shape_manual(values = c("wallkill peers 2018" = 17, "wallkill special study 2017" = 16, "wallkill special study 2018" = 17)) +
+  scale_color_manual(values = c("baseline" = "blue", "event" = "orange", "not observed" = "black")) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  # scale_y_log10() +
+  ggtitle(title) +
+  xlab("Site ID") +
+  ylab(ylabel) +
+  guides(color=guide_legend(override.aes=list(shape=15, size = 5)))+
+  theme(legend.key=element_blank())
+}
+
+plot.conc <- function(x, title, ylabel){
+  ggplot()+
+  geom_point(data = x, aes(x = station, y = result_value, shape = Project, color = Flow_Condition), size = 2) +
+  scale_color_manual(values = c("baseline" = "blue", "event" = "orange")) +
+  scale_shape_manual(values = c("PEERS 2018" = 17, "DEC Special Study 17-18" = 16)) +
+  # theme_classic() +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  ggtitle(title) +
+  xlab("Site ID") +
+  ylab(ylabel) +
+  guides(color=guide_legend(override.aes=list(shape=15, size = 5)))+
+  theme(legend.key=element_blank())
+}
+
+plot.conc.log10 <- function(x, title, ylabel){
+  ggplot()+
+  geom_point(data = x, aes(x = station, y = result_value, shape = Project, color = Flow_Condition), size = 2) +
+  scale_color_manual(values = c("baseline" = "blue", "event" = "orange")) +
+  scale_shape_manual(values = c("PEERS 2018" = 17, "DEC Special Study 17-18" = 16)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_y_log10() +
+  ggtitle(title) +
+  xlab("Site ID") +
+  ylab(ylabel) +
+  guides(color=guide_legend(override.aes=list(shape=15, size = 5)))+
+  theme(legend.key=element_blank())
+}
+
+plot.load <- function(x, title, ylabel){
+  ggplot()+
+  geom_point(data = x, aes(x = station, y = load_kg_per_day, color = Flow_Condition), size = 2) +
+  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  scale_color_manual(values = c("baseline" = "blue", "event" = "orange")) +
+  # scale_shape_manual(values = c("peers_2018" = 16, "special_study" = 17)) +
+  # scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
+  # scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
+  # theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  ggtitle(paste0(title, " - DOW Special Study 2018")) +
+  xlab("Site ID") +
+  ylab(ylabel) +
+  guides(color=guide_legend(override.aes=list(shape=15, size = 5)))+
+  theme(legend.key=element_blank())
+}
+
+```
+
+
+# Field data plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+
+# SPCO
+plot.field(field.all$cond, "Specific Conductance", "SpCond (uS/cm)")
+
+# TEMP
+plot.field(field.all$temp, "Temperature", "Temp (deg C)")
+
+# DO
+plot.field(field.all$do, "D.O. concentration", "DO (mg/l)")
+
+# pH
+plot.field(field.all$ph, "pH", "pH")
+
+```
+
+
+# TP plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# Filter data for plotting
+# chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
+#                                                           "Phosphorus (NA,mg/l)",
+#                                                           "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
+
+chem.wallkill.TP <- chem.wallkill %>% 
+  filter(chemical_name %in% "PHOSPHORUS, TOTAL (AS P)")  
+  # mutate(station = toupper(station))
+  # filter(!project_name %in% c("wallkill peers 2018"))
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.TP, "TP concentration", "[TP] (mg/l)") 
+  # geom_hline(yintercept = 0.075)
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.TP, "TP concentration (log10)", "[TP] (mg/l) log10") 
+  # geom_hline(yintercept = 0.075)
+
+# Load plot
+plot.load(chem.wallkill.TP, "TP loading ", "TP load (kg/day)") 
+
+```
+
+
+# Ammonia plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# chem.basin13.NH3 <- filter(chem.basin13, Parameter %in% c("Nitrogen, Ammonia (As N) (total,mg/l)" ,
+#                                                           "Nitrogen, Ammonia (As N) (total,mg/l)"))
+
+chem.wallkill.NH3 <- chem.wallkill %>% 
+  filter(chemical_name %in% "NITROGEN, AMMONIA (AS N)")  
+  # mutate(station = toupper(station))
+  # filter(!project_name %in% c("wallkill peers 2018"))
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.NH3, "Ammonia concentration", "[NH3] (mg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.NH3, "Ammonia concentration (log10)", "[NH3] (mg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.NH3, "Ammonia loading ", "NH3 load (kg/day)") 
+
+```
+
+
+# NO3 plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# chem.basin13.NO3 <- filter(chem.basin13, Parameter %in% c("Nitrogen, Nitrate (As N) (NA,mg/l)", 
+#                                                         "NITROGEN, NITRATE (AS N) (total,mg/l)", 
+#                                                         "Nitrogen, Nitrate (As N) (total,mg/l)"))
+
+chem.wallkill.NO3 <- chem.wallkill %>% 
+  filter(chemical_name %in% "NITROGEN, NITRATE (AS N)")
+  # filter(!project_name %in% c("wallkill peers 2018"))
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.NO3, "Nitrate concentration", "[NO3] (mg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.NO3, "Nitrate concentration (log10)", "[NO3] (mg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.NO3, "Nitrate loading ", "NO3 load (kg/day)") 
+
+```
+
+# Chloride plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# chem.basin13.Cl <- filter(chem.basin13, Parameter %in% c("CHLORIDE (AS CL) (total,mg/l)", 
+#                                                         "Chloride (As Cl) (total,mg/l)"))
+
+chem.wallkill.Cl <- chem.wallkill %>% 
+  filter(chemical_name %in% "CHLORIDE (AS CL)")
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.Cl, "Chloride concentration", "[Cl] (mg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.Cl, "Chloride concentration (log10)", "[Cl] (mg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.Cl, "Chloride loading ", "Cl load (kg/day)") 
+
+```
+
+# TDS plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# chem.basin13.TDS <- filter(chem.basin13, Parameter %in% c("Total Dissolved Solids (Residue, Filterable) (NA,mg/l)" , 
+#                                                         "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE) (total,mg/l)",
+#                                                         "Total Dissolved Solids (Residue, Filterable) (total,mg/l)"))
+
+chem.wallkill.TDS <- chem.wallkill %>% 
+  filter(chemical_name %in% "TOTAL DISSOLVED SOLIDS (RESIDUE, FILTERABLE)")
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.TDS, "Total Dissolved Solids", "[TDS] (mg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.TDS, "Total Dissolved Solids (log10)", "[TDS] (mg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.TDS, "TDS loading ", "TDS load (kg/day)") 
+
+```
+
+# Iron plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# chem.basin13.Fe <- filter(chem.basin13, Parameter %in% "Iron (total,ug/l)")
+
+chem.wallkill.Fe <- chem.wallkill %>% 
+  filter(chemical_name %in% "IRON")
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.Fe, "Iron concentration", "[Fe] (μg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.Fe, "Iron concentration (log10)", "[Fe] (μg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.Fe, "Iron loading ", "Fe load (kg/day)") 
+
+```
+
+# Alkalinity plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+# chem.basin13.alk <- filter(chem.basin13, Parameter %in% c("Alkalinity, Total (As CaCO3) (total,mg/l)" , 
+#                                                         "Alkalinity, Total (As CaCO3) (NA,mg/l)",
+#                                                         "ALKALINITY, TOTAL (AS CaCO3) (total,mg/l)" ))
+
+chem.wallkill.alk <- chem.wallkill %>% 
+  filter(chemical_name %in% "ALKALINITY, TOTAL (AS CACO3)" )
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.alk, "Alkalinity (as CaCO3) concentration", "Alkalinity (as CaCO3) (mg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.alk, "Alkalinity (as CaCO3) concentration (log10)", "Alk (CaCO3) (mg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.alk, "Alkalinity (as CaCO3) loading ", "Alk (CaCO3) load (kg/day)") 
+
+```
+
+# Chlorophyll plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+
+chem.wallkill.chlorophyll <- chem.wallkill %>% 
+  filter(chemical_name %in% "CHLOROPHYLL A" )
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.chlorophyll, "Chlorophyll concentration", "Chlorophyll (μg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.chlorophyll, "Chlorophyll concentration (log10)", "Chlorophyll (μg/l)") 
+
+# Load plot
+plot.load(chem.wallkill.chlorophyll, "Chlorophyll loading ", "Chlorophyll load (kg/day)") 
+
+```
+
+
