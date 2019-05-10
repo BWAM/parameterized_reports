@@ -81,12 +81,84 @@ field.all <- field.all %>%
   arrange(order) %>% 
   mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
 
-# Import basin 13 chem data (subset basin in ArcMap)
-# chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
+
 
 ### Use below for listing and choosing chem params for plotting (multiple variations present in historic data) ###
 # sort(unique(chem.wallkill$chemical_name))
+
+```
+
+Import historic basin data for context (calculating quantiles)
+```{r, eval=FALSE}
+library(tidyverse)
+
+# Import basin 13 chem data (subset basin in ArcMap)
+chem.basin13 <- read.csv("data/Wallkill_2018/simpleRIBS_basin13.csv", stringsAsFactors = FALSE)
+
 # sort(unique(chem.basin13$Parameter))
+
+# Subset TKN and nitrate-nitrite to calculate TN and remove duplicate station/year instances.
+chem.basin13.TKN <- chem.basin13 %>% 
+  filter(Parameter %in% c("Nitrogen, Kjeldahl, Total (total,mg/l)",
+                          "Nitrogen, Kjeldahl, Total (NA,mg/l)",
+                          "NITROGEN, KJELDAHL, TOTAL (total,mg/l)")) %>% 
+  rename("TKN_mgl" = Result_Val) %>% 
+  select(Station, SAMPLE_DAT, "TKN_mgl")
+chem.basin13.TKN_nodups <- chem.basin13.TKN[!duplicated(chem.basin13.TKN[c(1,2)]),]
+
+chem.basin13.NN <- chem.basin13 %>% 
+  filter(Parameter %in% c("Nitrate+Nitrite as Nitrogen (total,mg/l)",
+                          "Nitrogen, Nitrate-Nitrite (NA,mg/l)",
+                          "Nitrogen, Nitrite + Nitrate (total,mg/l)",
+                          "Nitrogen, Nitrate-Nitrite (total,mg/l)")) %>% 
+  rename("NN_mgl" = Result_Val) %>% 
+  select(Station, SAMPLE_DAT, "NN_mgl") 
+chem.basin13.NN_nodups <- chem.basin13.NN[!duplicated(chem.basin13.NN[c(1,2)]),]
+
+# chem.basin13.TKN.dups <- chem.basin13.TKN %>% 
+#   select(Station, SAMPLE_DAT) %>% 
+#   get_dupes()
+# 
+# chem.basin13.NN.dups <- chem.basin13.NN %>% 
+#   select(Station, SAMPLE_DAT) %>% 
+#   get_dupes()
+
+# Calculate TN and its quantiles. Ref for TN calc: https://www.epa.gov/sites/production/files/2015-09/documents/totalnitrogen.pdf
+chem.basin13.TN <- chem.basin13.TKN_nodups %>% 
+  left_join(chem.basin13.NN_nodups, by = c("Station", "SAMPLE_DAT"), keep = FALSE) %>% 
+  mutate(TN_mgl = TKN_mgl + NN_mgl)
+
+# Check quantiles against datasets before removing duplicates to see if it strongly affected them.
+TN.quantiles <- quantile(chem.basin13.TN$TN_mgl, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+NN.quantiles1 <- quantile(chem.basin13.NN$NN_mgl, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+NN.quantiles2 <- quantile(chem.basin13.TN$NN_mgl, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+TKN.quantiles1 <- quantile(chem.basin13.TKN$TKN_mgl, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+TKN.quantiles2 <- quantile(chem.basin13.TN$TKN_mgl, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+
+# Calculate TP and its quantiles
+chem.basin13.TP <- filter(chem.basin13, Parameter %in% c("Phosphorus (total,mg/l)",
+                                                          "Phosphorus (NA,mg/l)",
+                                                          "PHOSPHORUS, TOTAL (AS P) (total,mg/l)"))
+TP.quantiles <- quantile(chem.basin13.TP$Result_Val, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+
+
+## Import and subset historic field data for conductivity
+library(readxl)
+root.dir <- rprojroot::find_root("parameterized_reports.Rproj")
+field.data <- file.path(root.dir, "data", "Field.xlsx") %>% 
+  read_excel() %>%
+  filter(BASIN == 13) %>% 
+  select(BASIN, LOCATION, RIVMILE, COLL_DATE, COND) %>% 
+  mutate(year = lubridate::year(COLL_DATE)) %>% 
+  filter(year > 2002) %>%
+  filter(year < 2017) %>%
+  mutate(COND = ifelse(COND == "NA", NA, COND)) %>% 
+  mutate(COND = as.numeric(COND)) %>% 
+  filter(COND > 0) 
+
+# Calculate cond quanitles
+COND.quantiles <- quantile(field.data$COND, probs = c(0.1, 0.25, 0.5, 0.75, 0.9))
+
 
 ```
 
@@ -108,19 +180,20 @@ Reformat data for plot aesthetics
 chem.wallkill <- chem.wallkill %>%
   mutate(station_type = str_replace(station_type, "peers_2018", "PEERS 2018")) %>%
   mutate(station_type = str_replace(station_type, "special_study", "DEC Special Study 17-18")) %>%
-  # mutate(project_name = str_replace(project_name, "wallkill peers 2018", "Wallkill PEERS 2018")) %>%
-  # mutate(project_name = str_replace(project_name, "wallkill special study 2017", "Wallkill Special Study 2017")) %>% 
-  # mutate(project_name = str_replace(project_name, "wallkill special study 2018", "Wallkill Special Study 2018")) %>% 
   rename(Project = station_type) %>%
   rename(Flow_Condition = flow_qual) %>%
   mutate(station = toupper(station)) %>%
+  mutate(station = str_remove(station, "13-")) %>% 
   arrange(order) %>% 
-  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station)))) %>% 
+  mutate(Flow_project = ifelse(!is.na(flow_quant_cfs), "DEC Special Study 2018", NA))
 
 field.all <- field.all %>%
   mutate(station = toupper(station)) %>%
+  mutate(station = str_remove(station, "13-")) %>% 
   arrange(order) %>% 
-  mutate(station = factor(station, c("_Basin 13 historic", unique(station))))
+  mutate(station = factor(station, c("_Basin 13 historic", unique(station)))) %>% 
+  mutate(Project = "DEC Special Study 17-18")
 ```
 
 Plot functions
@@ -128,14 +201,9 @@ Plot functions
 
 plot.field <- function(param, title, ylabel){
   ggplot()+
-  geom_point(data = field.all, aes(x = station, y = param, shape = project_name, color = flow_qual), size = 2) +
-  # Add in historic basin context boxplot. Cannot seem to get x-axis ordering to work when adding this.
-  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
-  scale_shape_manual(values = c("wallkill peers 2018" = 17, "wallkill special study 2017" = 16, "wallkill special study 2018" = 17)) +
+  geom_point(data = field.all, aes(x = station, y = param, color = flow_qual, shape = Project), size = 2) +
   scale_color_manual(values = c("baseline" = "blue", "event" = "orange", "not observed" = "black")) +
-  # theme_classic() +  
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
-  # scale_y_log10() +
   ggtitle(title) +
   xlab("Site ID") +
   ylab(ylabel) +
@@ -148,7 +216,6 @@ plot.conc <- function(x, title, ylabel){
   geom_point(data = x, aes(x = station, y = result_value, shape = Project, color = Flow_Condition), size = 2) +
   scale_color_manual(values = c("baseline" = "blue", "event" = "orange")) +
   scale_shape_manual(values = c("PEERS 2018" = 17, "DEC Special Study 17-18" = 16)) +
-  # theme_classic() +  
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
   ggtitle(title) +
   xlab("Site ID") +
@@ -173,15 +240,11 @@ plot.conc.log10 <- function(x, title, ylabel){
 
 plot.load <- function(x, title, ylabel){
   ggplot()+
-  geom_point(data = x, aes(x = station, y = load_kg_per_day, color = Flow_Condition), size = 2) +
-  # geom_boxplot(data = chem.basin13.TP, aes("_Basin 13 historic",Result_Val)) +
+  geom_point(data = x, aes(x = station, y = load_kg_per_day, color = Flow_Condition, shape = Flow_project), size = 2) +
   scale_color_manual(values = c("baseline" = "blue", "event" = "orange")) +
-  # scale_shape_manual(values = c("peers_2018" = 16, "special_study" = 17)) +
-  # scale_color_manual(values = c("wallkill peers 2018" = "green", "wallkill special study 2017" = "black", "wallkill special study 2018" = "black")) +
-  # scale_shape_manual(values = c("baseline" = 16, "event" = 17, "not observed" = 4)) +
-  # theme_bw() +
+  scale_shape_discrete(na.translate = F) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
-  ggtitle(paste0(title, " - DOW Special Study 2018")) +
+  ggtitle(title) +
   xlab("Site ID") +
   ylab(ylabel) +
   guides(color=guide_legend(override.aes=list(shape=15, size = 5)))+
@@ -234,6 +297,21 @@ plot.load(chem.wallkill.TP, "TP loading ", "TP load (kg/day)")
 
 ```
 
+# TN plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+chem.wallkill.TN <- chem.wallkill %>% 
+  filter(chemical_name %in% "NITROGEN")
+
+# Concentration plot (linear)
+plot.conc(chem.wallkill.TN, "TN concentration", "[TN] (mg/l)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.TN, "TN concentration (log10)", "[TN] (mg/l) log10") 
+
+# Load plot
+plot.load(chem.wallkill.TN, "TN loading ", "TN load (kg/day)") 
+
+```
 
 # Ammonia plots
 ```{r echo = FALSE, fig.width=9, fig.height=6}
@@ -372,4 +450,15 @@ plot.load(chem.wallkill.chlorophyll, "Chlorophyll loading ", "Chlorophyll load (
 
 ```
 
+# Turbidity plots
+```{r echo = FALSE, fig.width=9, fig.height=6}
+chem.wallkill.turb <- chem.wallkill %>% 
+  filter(chemical_name %in% "TURBIDITY")
 
+# Concentration plot (linear)
+plot.conc(chem.wallkill.turb, "Turbidity", "Turb (NTU)") 
+
+# Concentration plot (log10)
+plot.conc.log10(chem.wallkill.turb, "Turbidity (log10)", "Turb (NTU)") 
+
+```
